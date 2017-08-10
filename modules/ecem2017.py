@@ -42,10 +42,14 @@ def createHead(headTransform_4x4 = np.eye(4)):
 
   
 
-def plotGazeVelocity(datafile, trialNumber, columnNames,yLim=[0 ,500],width=800,height=600,blockNumber=1,inline=False):
+def plotGazeVelocity(datafile, trialNumber, columnNames,yLim=[0 ,500],width=800,height=600,inline=True):
     
+    if( (trialNumber in datafile['trialNumber'].values) is False ):
+        print('Trial number not found in data file.')
+        return
+
     #trialNum = 13
-    gbTrial = datafile.groupby(['trialNumber','blockNumber']).get_group((trialNumber,blockNumber))
+    gbTrial = datafile.groupby(['trialNumber']).get_group((trialNumber))
 
     import plotly.plotly as py
     import plotly.graph_objs as go
@@ -56,10 +60,12 @@ def plotGazeVelocity(datafile, trialNumber, columnNames,yLim=[0 ,500],width=800,
     
     colors_idx = ['rgb(0,204,204)','rgb(128,128,128)','rgb(204,0,0)','rgb(102,0,204)']
 
+    time_fr = np.array(datafile['frameTime'] - datafile['frameTime'].iloc[0])
+
     for idx, columnName in enumerate(columnNames):
         
         scatterObj = go.Scatter(
-        x=gbTrial['frameTime'],
+        x=time_fr,
         y=gbTrial[columnName],
         name = columnName,
         line = dict(color = colors_idx[idx],width=3),
@@ -73,7 +79,7 @@ def plotGazeVelocity(datafile, trialNumber, columnNames,yLim=[0 ,500],width=800,
     events_fr = gbTrial['eventFlag'].values
     eventIdx = np.where( gbTrial['eventFlag'] > 0 )
 
-    eventTimes_idx =  gbTrial['frameTime'].values[eventIdx]  
+    eventTimes_idx =  time_fr[eventIdx]  
 
     eventText_idx = [str(event) for event in events_fr[np.where(events_fr>2)]]
     eventText_idx = np.array([[eT, '','',''] for eT in eventText_idx]).flatten()
@@ -102,7 +108,7 @@ def plotGazeVelocity(datafile, trialNumber, columnNames,yLim=[0 ,500],width=800,
         xaxis=dict(
             rangeslider=dict(),
             type='time',
-            range=[gbTrial['frameTime'].iloc[0], gbTrial['frameTime'].iloc[0]+2]
+            range=[0,1]
         )
     )
     
@@ -136,7 +142,7 @@ def plotEIH(cycEyeInHead_XYZW,
                        width = 4)
                   )
     
-    layout = go.Layout(title="EIH", 
+    layout = go.Layout(title="Head Centered Space", 
                     width=width,
                     height=height,
                     showlegend=False,
@@ -160,7 +166,7 @@ def plotEIH(cycEyeInHead_XYZW,
         plot(fig)
     
 def plotGIW(viewPos_XYZ,
-            cycGIW_XYZW,
+            cycGIW_XYZ,
             ballPos_XYZ,
             headTransform_4x4,
             xRange = [-1,1],
@@ -172,9 +178,9 @@ def plotGIW(viewPos_XYZ,
 
     headShape = createHead(headTransform_4x4)
     
-    giwDir = go.Scatter3d(x=[viewPos_XYZ[0],cycGIW_XYZW[0]],
-                          y=[viewPos_XYZ[2],cycGIW_XYZW[2]],
-                          z=[viewPos_XYZ[1],cycGIW_XYZW[1]],
+    giwDir = go.Scatter3d(x=[viewPos_XYZ[0],cycGIW_XYZ[0]],
+                          y=[viewPos_XYZ[2],cycGIW_XYZ[2]],
+                          z=[viewPos_XYZ[1],cycGIW_XYZ[1]],
                           mode='lines+text',
                     text=['','gaze'],
                     textposition='top right',
