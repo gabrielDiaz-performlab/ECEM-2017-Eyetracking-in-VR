@@ -11,6 +11,70 @@ init_notebook_mode()
 
 np.set_printoptions(precision=2)
 
+def calcGIW(datafile):
+
+    if( ('cycGIW_XYZ' in datafile.columns) is True ):
+            print('cycGIW_XYZ is already in the dataframe.')
+            return
+
+    def eihToGIW(rowIn):            
+
+        # Grab gransformation matrix
+        headTransform_4x4 = np.reshape(rowIn["viewMat_4x4"],[4,4])
+        # Transpose
+        headTransform_4x4 = headTransform_4x4.T
+
+        # Grab cyc EIH direction
+        cycEyeInHead_XYZ = rowIn['cycEyeInHead_XYZ']
+        # Add a 1 to convert to homogeneous coordinates
+        cycEyeInHead_XYZW = np.hstack( [cycEyeInHead_XYZ,1])
+
+        # Take the dot product!
+        cycGIWVec_XYZW = np.dot( headTransform_4x4,cycEyeInHead_XYZW)
+
+        # Now, convert into a direction from the cyclopean eye in world coordinates
+        # Also, we can discard the w term
+        cycGIWDir_XYZ = (cycGIWVec_XYZW[0:3]-rowIn["viewPos_XYZ"]) / np.linalg.norm((cycGIWVec_XYZW[0:3]-rowIn["viewPos_XYZ"]))
+
+        # You must return as a list or a tuple
+        return list(cycGIWDir_XYZ)
+    
+    datafile['cycGIW_XYZ'] = datafile.apply(lambda row: eihToGIW(row),axis=1)
+    
+    return datafile
+    
+
+
+def calcAngularVelocity(datafile):
+
+    if( ('cycGIW_XYZ' in datafile.columns) is False ):
+        print('Missing GIW signal.  Calculating...')
+        datafile = calcGIW(datafile)
+        
+    datafile['smiDateTime'] = pd.to_datetime(datafile.eyeTimeStamp,unit='ns')
+    deltaTime = datafile['smiDateTime'].diff()
+    deltaTime.loc[deltaTime.dt.microseconds==0] = pd.NaT
+    deltaTime = deltaTime.fillna(method='bfill', limit=1)
+    datafile['smiDeltaT'] = deltaTime.dt.microseconds / 1000000
+
+    changeInGIW_fr = [ np.rad2deg(np.arccos(np.vdot(abc,xyz)))
+                        for abc, xyz in zip(datafile['cycGIW_XYZ'], np.roll(datafile['cycGIW_XYZ'],1))]
+
+    changeInEIH_fr = [ np.rad2deg(np.arccos(np.vdot(abc,xyz)))
+                        for abc, xyz in zip(datafile['cycEyeInHead_XYZ'], np.roll(datafile['cycEyeInHead_XYZ'],1))]
+
+    datafile['cycGIWVelocity'] = changeInGIW_fr / datafile['smiDeltaT']
+    datafile['cycEIHVelocity'] = changeInEIH_fr / datafile['smiDeltaT']
+
+    datafile['cycGIWVelocity'] = datafile['cycGIWVelocity'].fillna(method='bfill')
+    datafile['cycEIHVelocity'] = datafile['cycEIHVelocity'].fillna(method='bfill')
+    
+    return datafile
+
+
+
+
+
 def createHead(headTransform_4x4 = np.eye(4)):
 
         phi = np.linspace(0, 2*np.pi)
@@ -49,7 +113,7 @@ def plotGazeVelocity(datafile, trialNumber, columnNames,yLim=[0 ,500],width=800,
         return
 
     #trialNum = 13
-    gbTrial = datafile.groupby(['trialNumber']).get_group((trialNumber))
+    trialData = datafile.groupby(['trialNumber']).get_group((trialNumber))
 
     import plotly.plotly as py
     import plotly.graph_objs as go
@@ -60,13 +124,13 @@ def plotGazeVelocity(datafile, trialNumber, columnNames,yLim=[0 ,500],width=800,
     
     colors_idx = ['rgb(0,204,204)','rgb(128,128,128)','rgb(204,0,0)','rgb(102,0,204)']
 
-    time_fr = np.array(datafile['frameTime'] - datafile['frameTime'].iloc[0])
+    time_fr = np.array(trialData['frameTime'] - trialData['frameTime'].iloc[0])
 
     for idx, columnName in enumerate(columnNames):
         
         scatterObj = go.Scatter(
         x=time_fr,
-        y=gbTrial[columnName],
+        y=trialData[columnName],
         name = columnName,
         line = dict(color = colors_idx[idx],width=3),
         opacity = 0.8)
@@ -76,8 +140,8 @@ def plotGazeVelocity(datafile, trialNumber, columnNames,yLim=[0 ,500],width=800,
     ################################################################
     ## You can ignore this section.  This code adds event labels to the time series
 
-    events_fr = gbTrial['eventFlag'].values
-    eventIdx = np.where( gbTrial['eventFlag'] > 0 )
+    events_fr = trialData['eventFlag'].values
+    eventIdx = np.where( trialData['eventFlag'] > 0 )
 
     eventTimes_idx =  time_fr[eventIdx]  
 
@@ -108,19 +172,14 @@ def plotGazeVelocity(datafile, trialNumber, columnNames,yLim=[0 ,500],width=800,
         xaxis=dict(
             rangeslider=dict(),
             type='time',
-            range=[0,1]
+            range=[0,1.0]
         )
     )
     
     traces.append(eventLabels)
     
     fig = dict(data=traces, layout=layout)
-    
-    if inline is True:
-        iplot(fig)
-    else:
-        plot(fig)
-
+    return fig
     
 def plotEIH(cycEyeInHead_XYZW,
             xRange = [-1,1],
