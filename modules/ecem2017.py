@@ -217,12 +217,9 @@ def plotEIH(cycEyeInHead_XYZW,
 
                     )
 
-    fig=go.Figure(data=go.Data([head,eihDir]),layout=layout)
+    fig = go.Figure(data=go.Data([head,eihDir]),layout=layout)
 
-    if inline is True:
-        iplot(fig)
-    else:
-        plot(fig)
+    return fig
     
 def plotGIW(viewPos_XYZ,
             cycGIW_XYZ,
@@ -291,8 +288,27 @@ def plotGIW(viewPos_XYZ,
 
     fig=go.Figure(data=go.Data([giwDir,ballDir,headShape]),layout=layout)
 
-    if inline is True:
-        iplot(fig)
-    else:
-        plot(fig)
+    return fig
 
+
+def gd_eihToGIW(rowIn):
+
+    # Grab gransformation matrix
+    headTransform_4x4 = np.reshape(rowIn["viewMat_4x4"],[4,4])
+    # Transpose
+    headTransform_4x4 = headTransform_4x4.T
+
+    # Grab cyc EIH direction
+    cycEyeInHead_XYZ = rowIn['cycEyeInHead_XYZ']
+    # Add a 1 to convert to homogeneous coordinates
+    cycEyeInHead_XYZW = np.hstack( [cycEyeInHead_XYZ,1])
+
+    # Take the dot product!
+    cycGIWVec_XYZW = np.dot( headTransform_4x4,cycEyeInHead_XYZW)
+    
+    # Now, convert into a direction from the cyclopean eye in world coordinates
+    # Also, we can discard the w term
+    cycGIWDir_XYZ = (cycGIWVec_XYZW[0:3]-rowIn["viewPos_XYZ"]) / np.linalg.norm((cycGIWVec_XYZW[0:3]-rowIn["viewPos_XYZ"]))
+    
+    # You must return as a list or a tuple
+    return list(cycGIWDir_XYZ)
